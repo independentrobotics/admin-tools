@@ -171,6 +171,13 @@
           <div class="toggle-opt-desc">Consecutive days with the same work are merged into one row. Period shows a date range.</div>
         </div>
       </label>
+      <label class="toggle-opt" id="opt-period">
+        <input type="radio" name="grouping" value="period" onchange="updateToggle()">
+        <div>
+          <div class="toggle-opt-title">Group by billing period</div>
+          <div class="toggle-opt-desc">All identical work per employee is merged into one row regardless of consecutive days. Period shows the full billing period range. Day of week column is omitted.</div>
+        </div>
+      </label>
     </div>
     <div style="margin-top:12px; border-top:1px solid #eee; padding-top:12px;">
       <label class="toggle-opt selected" id="opt-billable" style="max-width:100%;" onclick="updateBillableToggle()">
@@ -240,6 +247,7 @@ function updateToggle() {
   const val = document.querySelector('input[name="grouping"]:checked').value;
   document.getElementById('opt-daily').classList.toggle('selected', val === 'daily');
   document.getElementById('opt-grouped').classList.toggle('selected', val === 'grouped');
+  document.getElementById('opt-period').classList.toggle('selected', val === 'period');
 }
 
 function updateBillableToggle() {
@@ -626,6 +634,23 @@ function buildEmpMap(startFilter, endFilter) {
   return empMap;
 }
 
+// Group ALL days that share the same workDescs + billing tags, regardless of consecutiveness
+// Period start/end are set to the billing period filter bounds
+function groupByDescPeriod(dayDict, startFilter, endFilter) {
+  const allEntries = Object.keys(dayDict).sort().flatMap(k => dayDict[k]);
+  if (!allEntries.length) return [];
+  const groups = {};
+  for (const e of allEntries) {
+    const key = e.workDescs.join('|') + '||' + e.ised2 + '||' + e.ised6;
+    if (!groups[key]) {
+      groups[key] = { startDate: startFilter, endDate: endFilter, hours: 0,
+                      workDescs: [...e.workDescs], ised2: e.ised2, ised6: e.ised6 };
+    }
+    groups[key].hours += e.hours;
+  }
+  return Object.values(groups);
+}
+
 // Group consecutive days that share the same workDescs + billing tags
 function groupByDesc(dayDict) {
   const sorted = Object.keys(dayDict)
@@ -659,7 +684,8 @@ function fmtDate(d) { return `${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFul
 function dayName(d) { return ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][d.getDay()]; }
 
 // ── Excel sheet builder ───────────────────────────────────────────────────────
-function buildSheet(empName, entries, isGrouped) {
+function buildSheet(empName, entries, mode) {
+  const isGrouped = mode === 'grouped' || mode === 'period';
   const ws = {}, merges = [];
   const AMBER  = { patternType:'solid', fgColor:{ rgb:'FFC000' } };
   const WHITE  = { patternType:'solid', fgColor:{ rgb:'FFFFFF' } };
@@ -719,7 +745,11 @@ function buildSheet(empName, entries, isGrouped) {
 
     // Period and day columns
     let periodStr, dayStr;
-    if (isGrouped) {
+    if (mode === 'period') {
+      const sameDay = isoKey(e.startDate) === isoKey(e.endDate);
+      periodStr = sameDay ? fmtDate(e.startDate) : `${fmtDate(e.startDate)} → ${fmtDate(e.endDate)}`;
+      dayStr    = '';
+    } else if (mode === 'grouped') {
       const sameDay = isoKey(e.startDate) === isoKey(e.endDate);
       periodStr = sameDay ? fmtDate(e.startDate) : `${fmtDate(e.startDate)} → ${fmtDate(e.endDate)}`;
       dayStr    = sameDay ? dayName(e.startDate) : `${dayName(e.startDate)} – ${dayName(e.endDate)}`;
@@ -788,7 +818,7 @@ function buildSheet(empName, entries, isGrouped) {
 function generateTimesheets() {
   const startFilter = new Date(document.getElementById('startDate').value + 'T00:00:00');
   const endFilter   = new Date(document.getElementById('endDate').value   + 'T00:00:00');
-  const isGrouped   = document.querySelector('input[name="grouping"]:checked').value === 'grouped';
+  const groupMode = document.querySelector('input[name="grouping"]:checked').value;
 
   const empMap  = buildEmpMap(startFilter, endFilter);
   const empNames = Object.keys(empMap);
@@ -798,12 +828,15 @@ function generateTimesheets() {
 
   const wb = XLSX.utils.book_new();
   for (const emp of empNames.sort()) {
-    const entries = isGrouped
-      ? groupByDesc(empMap[emp])
-      : Object.keys(empMap[emp])
-      .sort()
-      .flatMap(k => empMap[emp][k]);
-    const ws = buildSheet(emp, entries, isGrouped);
+    let entries;
+    if (groupMode === 'period') {
+      entries = groupByDescPeriod(empMap[emp], startFilter, endFilter);
+    } else if (groupMode === 'grouped') {
+      entries = groupByDesc(empMap[emp]);
+    } else {
+      entries = Object.keys(empMap[emp]).sort().flatMap(k => empMap[emp][k]);
+    }
+    const ws = buildSheet(emp, entries, groupMode);
     XLSX.utils.book_append_sheet(wb, ws, emp.replace(/[\\/*?[\]:]/g,'').slice(0,31));
   }
 
