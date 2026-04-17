@@ -1,0 +1,811 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IR Timesheet Generator</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root {
+    --green-dark: #375623;
+    --green-mid: #4a7a30;
+    --amber: #FFC000;
+    --amber-light: #FFFBF0;
+    --grey-light: #F2F2F2;
+    --grey-mid: #c8c5bb;
+    --grey-dark: #44546A;
+    --text: #1a1a1a;
+    --text-muted: #595959;
+    --border: #d0cdc4;
+    --success-bg: #EAF3DE;
+    --success-text: #375623;
+    --error-bg: #FCEBEB;
+    --error-text: #A32D2D;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Calibri, sans-serif; background: #f0ede6; color: var(--text); min-height: 100vh; }
+
+  .header { background: var(--green-dark); color: white; padding: 18px 32px; display: flex; align-items: center; gap: 14px; }
+  .header-icon { width: 36px; height: 36px; background: var(--amber); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
+  .header h1 { font-size: 19px; font-weight: 600; letter-spacing: -0.3px; }
+  .header p { font-size: 12px; opacity: 0.7; margin-top: 2px; }
+
+  .container { max-width: 900px; margin: 0 auto; padding: 24px 20px 60px; }
+
+  .card { background: white; border: 1px solid #dedad1; border-radius: 12px; padding: 22px 24px; margin-bottom: 16px; }
+  .card-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.7px; color: var(--text-muted); margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+  .step-badge { width: 20px; height: 20px; background: var(--green-dark); color: white; border-radius: 50%; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+
+  .date-row { display: flex; gap: 14px; flex-wrap: wrap; }
+  .date-field { flex: 1; min-width: 160px; }
+  .field-label { display: block; font-size: 11px; font-weight: 700; color: var(--text-muted); margin-bottom: 5px; text-transform: uppercase; letter-spacing: 0.4px; }
+
+  input[type="date"], select, input[type="text"], input[type="number"] {
+    width: 100%; padding: 9px 12px; border: 1.5px solid var(--border); border-radius: 8px;
+    font-size: 13px; color: var(--text); outline: none; transition: border-color 0.15s; font-family: inherit;
+  }
+  input[type="date"], select { background: var(--amber-light); }
+  input[type="text"], input[type="number"] { background: white; }
+  input:focus, select:focus { border-color: var(--amber); }
+
+  .toggle-row { display: flex; gap: 10px; }
+  .toggle-opt { flex: 1; border: 2px solid var(--border); border-radius: 10px; padding: 12px 14px; cursor: pointer; transition: all 0.15s; background: white; display: flex; align-items: flex-start; gap: 10px; }
+  .toggle-opt:hover { border-color: var(--green-dark); background: #f7faf4; }
+  .toggle-opt.selected { border-color: var(--green-dark); background: #f0f7ea; }
+  .toggle-opt input[type="radio"] { margin-top: 2px; accent-color: var(--green-dark); flex-shrink: 0; }
+  .toggle-opt-title { font-size: 13px; font-weight: 600; color: var(--text); }
+  .toggle-opt-desc { font-size: 11px; color: var(--text-muted); margin-top: 2px; line-height: 1.4; }
+
+  .upload-zone { border: 2px dashed var(--grey-mid); border-radius: 10px; padding: 28px 20px; text-align: center; cursor: pointer; transition: all 0.2s; background: var(--grey-light); position: relative; }
+  .upload-zone:hover, .upload-zone.drag-over { border-color: var(--green-dark); background: #f0f5ec; }
+  .upload-zone input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+  .upload-zone p { font-size: 14px; color: var(--text-muted); margin-top: 6px; }
+  .upload-zone .hint { font-size: 12px; margin-top: 5px; color: #aaa; }
+  .upload-icon { font-size: 28px; }
+
+  .file-loaded { background: var(--success-bg); border: 1.5px solid #b7d98a; border-radius: 10px; padding: 12px 16px; display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--success-text); }
+  .file-loaded .filename { font-weight: 600; font-size: 13px; }
+  .file-loaded .rowcount { font-size: 11px; opacity: 0.75; }
+  .clear-btn { margin-left: auto; background: none; border: none; cursor: pointer; font-size: 15px; color: var(--success-text); opacity: 0.55; padding: 2px 6px; border-radius: 4px; }
+  .clear-btn:hover { opacity: 1; background: rgba(0,0,0,0.06); }
+
+  .preview-outer { overflow-x: auto; margin-top: 12px; max-height: 160px; overflow-y: auto; border-radius: 8px; border: 1px solid #e0ddd5; }
+  .preview-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+  .preview-table th { background: var(--grey-dark); color: white; padding: 6px 10px; text-align: left; font-weight: 600; position: sticky; top: 0; white-space: nowrap; }
+  .preview-table td { padding: 5px 10px; border-bottom: 1px solid #eee; white-space: nowrap; max-width: 200px; overflow: hidden; text-overflow: ellipsis; }
+  .preview-table tr:last-child td { border-bottom: none; }
+  .preview-table tr:nth-child(even) td { background: #fafaf7; }
+
+  #empConfigSection { display: none; }
+  .emp-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+  .emp-card { border: 1px solid #e0ddd5; border-radius: 10px; padding: 14px 16px; background: #fafaf8; }
+  .emp-name { font-size: 13px; font-weight: 600; color: var(--green-dark); margin-bottom: 10px; display: flex; align-items: center; gap: 6px; }
+  .emp-name::before { content: ''; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--amber); flex-shrink: 0; }
+  .emp-fields { display: flex; flex-direction: column; gap: 8px; }
+
+  .generate-btn { width: 100%; padding: 14px; background: var(--green-dark); color: white; border: none; border-radius: 10px; font-size: 15px; font-weight: 600; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 10px; transition: background 0.15s, transform 0.1s; font-family: inherit; }
+  .generate-btn:hover:not(:disabled) { background: var(--green-mid); }
+  .generate-btn:active:not(:disabled) { transform: scale(0.99); }
+  .generate-btn:disabled { background: var(--grey-mid); cursor: not-allowed; }
+
+  .status { padding: 14px 18px; border-radius: 10px; font-size: 13px; margin-top: 14px; display: none; line-height: 1.5; }
+  .status.success { background: var(--success-bg); color: var(--success-text); border: 1px solid #b7d98a; display: block; }
+  .status.error { background: var(--error-bg); color: var(--error-text); border: 1px solid #f7c1c1; display: block; }
+  .emp-badges { margin-top: 10px; display: flex; flex-wrap: wrap; gap: 6px; }
+  .emp-badge { background: white; border: 1.5px solid #b7d98a; color: var(--success-text); padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+
+  .instructions { background: #f5f3ee; border: 1px solid #dedad1; border-radius: 10px; padding: 14px 18px; font-size: 12px; color: var(--text-muted); line-height: 1.7; margin-bottom: 16px; }
+  .instructions ol { padding-left: 18px; margin-top: 6px; }
+  .instructions li { margin-bottom: 2px; }
+
+  .warn-box { background: #FFF8E1; border: 1.5px solid #FFD54F; border-radius: 10px; padding: 14px 16px; margin-top: 12px; }
+  .warn-box-title { font-size: 12px; font-weight: 700; color: #795548; margin-bottom: 8px; display: flex; align-items: center; gap: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .warn-item { font-size: 12px; color: #5D4037; padding: 5px 0; border-bottom: 1px solid #FFE082; line-height: 1.5; }
+  .warn-item:last-child { border-bottom: none; padding-bottom: 0; }
+  .warn-weeks { font-size: 11px; color: #8D6E63; margin-top: 2px; }
+
+  .billing-divider { height: 1px; background: #e8e4db; margin: 0 0 14px; }
+  .billing-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: var(--text-muted); margin-bottom: 12px; }
+  .billing-rows { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+  .billing-row { display: flex; align-items: center; justify-content: space-between; font-size: 12px; padding: 6px 10px; background: #f5f3ee; border-radius: 7px; }
+  .billing-row .emp-label { color: var(--text-muted); }
+  .billing-row .emp-hours { color: var(--text-muted); font-size: 11px; margin-left: 8px; }
+  .billing-row .emp-amount { font-weight: 600; color: var(--green-dark); font-size: 13px; }
+  .billing-row .emp-amount.no-rate { color: var(--grey-mid); font-style: italic; font-size: 11px; font-weight: 400; }
+  .billing-total-row { display: flex; align-items: center; justify-content: space-between; padding: 9px 10px; background: var(--success-bg); border: 1.5px solid #b7d98a; border-radius: 8px; }
+  .billing-total-row .total-label { font-size: 12px; font-weight: 700; color: var(--success-text); }
+  .billing-total-row .total-amount { font-size: 16px; font-weight: 700; color: var(--green-dark); }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-icon">⚡</div>
+  <div>
+    <h1>IR Timesheet Generator</h1>
+    <p>Independent Robotics — Notion export → formatted employee timesheets — v4</p>
+  </div>
+</div>
+
+<div class="container">
+
+  <div class="instructions">
+    Export your Notion time log as <strong>CSV</strong>, then use this tool to generate one formatted timesheet per employee.
+    <ol>
+      <li>Set your billing period and row grouping preference</li>
+      <li>Upload the Notion CSV export — employee cards will appear for title &amp; rate input</li>
+      <li>Click <strong>Generate Timesheets</strong> — an .xlsx downloads automatically</li>
+    </ol>
+  </div>
+
+  <!-- Step 1: Date range -->
+  <div class="card">
+    <div class="card-title"><span class="step-badge">1</span> Billing Period</div>
+    <div class="date-row">
+      <div class="date-field">
+        <label class="field-label">Start Date</label>
+        <input type="date" id="startDate" onchange="checkReady()">
+      </div>
+      <div class="date-field">
+        <label class="field-label">End Date</label>
+        <input type="date" id="endDate" onchange="checkReady()">
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 2: Grouping -->
+  <div class="card">
+    <div class="card-title"><span class="step-badge">2</span> Options</div>
+    <div class="toggle-row">
+      <label class="toggle-opt selected" id="opt-daily">
+        <input type="radio" name="grouping" value="daily" checked onchange="updateToggle()">
+        <div>
+          <div class="toggle-opt-title">One row per day</div>
+          <div class="toggle-opt-desc">Each calendar day is its own row. Period column shows a single date.</div>
+        </div>
+      </label>
+      <label class="toggle-opt" id="opt-grouped">
+        <input type="radio" name="grouping" value="grouped" onchange="updateToggle()">
+        <div>
+          <div class="toggle-opt-title">Group by description</div>
+          <div class="toggle-opt-desc">Consecutive days with the same work are merged into one row. Period shows a date range.</div>
+        </div>
+      </label>
+    </div>
+    <div style="margin-top:12px; border-top:1px solid #eee; padding-top:12px;">
+      <label class="toggle-opt selected" id="opt-billable" style="max-width:100%;" onclick="updateBillableToggle()">
+        <input type="checkbox" id="billableOnly" checked style="width:auto; margin-top:2px; accent-color:var(--green-dark); flex-shrink:0;" onclick="event.stopPropagation(); updateBillableToggle()">
+        <div>
+          <div class="toggle-opt-title">Only include billables</div>
+          <div class="toggle-opt-desc">Excludes entries with no Billing Code (e.g. sick days, holidays, PTO).</div>
+        </div>
+      </label>
+    </div>
+  </div>
+
+  <!-- Step 3: Upload -->
+  <div class="card">
+    <div class="card-title"><span class="step-badge">3</span> Upload Notion CSV Export</div>
+    <div id="uploadZone" class="upload-zone">
+      <input type="file" id="csvFile" accept=".csv">
+      <div class="upload-icon">📄</div>
+      <p><strong>Click to upload</strong> or drag &amp; drop</p>
+      <p class="hint">CSV export from your Notion time log database</p>
+    </div>
+    <div id="fileLoaded" style="display:none"></div>
+    <div id="previewWrap" style="display:none"></div>
+    <div id="hoursWarnings" style="display:none"></div>
+  </div>
+
+  <!-- Step 4: Employee config — revealed after upload -->
+  <div class="card" id="empConfigSection">
+    <div class="card-title"><span class="step-badge">4</span> Employee Details</div>
+    <p style="font-size:12px; color:var(--text-muted); margin-bottom:14px;">Set each employee's title and hourly rate. Leave rate blank to omit cost totals.</p>
+    <div class="emp-grid" id="empGrid"></div>
+    <div id="billingPreview" style="display:none; margin-top:18px;"></div>
+  </div>
+
+  <button class="generate-btn" id="generateBtn" disabled onclick="generateTimesheets()">
+    <span>▶</span> Generate Timesheets
+  </button>
+
+  <div class="status" id="statusMsg"></div>
+
+</div>
+
+<script>
+let parsedRows = [];
+let employees  = [];
+
+const COMPANY = "Independent Robotics Inc. / 4175 Sainte-Catherine St W, Suite 310, Westmount, QC H3Z 1P7";
+const ARROW   = '\u2192';
+
+// ── Employee defaults ─────────────────────────────────────────────────────────
+const EMP_DEFAULTS = {
+  'nicholas dudek': { title: 'Head of Software',      rate: 165 },
+  'nick dudek':     { title: 'Head of Software',      rate: 165 },
+  'ian karp':       { title: 'Head of Operations',    rate: 165 },
+  'jeremy mallette':{ title: 'Head of Hardware',      rate: 165 },
+  'julian':         { title: 'CEO',                   rate: 185 },
+  'bobak':          { title: 'Senior AI Developer',   rate: 165 },
+  'aidan jackson':  { title: 'Roboticist',             rate: 130 },
+};
+
+function empDefault(name) {
+  return EMP_DEFAULTS[name.toLowerCase()] || null;
+}
+
+// ── UI helpers ────────────────────────────────────────────────────────────────
+function updateToggle() {
+  const val = document.querySelector('input[name="grouping"]:checked').value;
+  document.getElementById('opt-daily').classList.toggle('selected', val === 'daily');
+  document.getElementById('opt-grouped').classList.toggle('selected', val === 'grouped');
+}
+
+function updateBillableToggle() {
+  setTimeout(() => {
+    const checked = document.getElementById('billableOnly').checked;
+    document.getElementById('opt-billable').classList.toggle('selected', checked);
+    if (parsedRows.length) renderBillingPreview();
+  }, 0);
+}
+
+function checkReady() {
+  const s = document.getElementById('startDate').value;
+  const e = document.getElementById('endDate').value;
+  document.getElementById('generateBtn').disabled = !(s && e && parsedRows.length && s <= e);
+  if (parsedRows.length) renderBillingPreview();
+}
+
+// ── Upload / CSV ──────────────────────────────────────────────────────────────
+const uploadZone = document.getElementById('uploadZone');
+uploadZone.addEventListener('dragover',  e => { e.preventDefault(); uploadZone.classList.add('drag-over'); });
+uploadZone.addEventListener('dragleave', () => uploadZone.classList.remove('drag-over'));
+uploadZone.addEventListener('drop', e => {
+  e.preventDefault(); uploadZone.classList.remove('drag-over');
+  if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+});
+document.getElementById('csvFile').addEventListener('change', e => { if (e.target.files[0]) handleFile(e.target.files[0]); });
+
+function handleFile(file) {
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      parsedRows = parseCSV(ev.target.result);
+      if (!parsedRows.length) throw new Error('No data rows found');
+      employees = [...new Set(parsedRows.map(r => (r['Assigned To']||'').trim()).filter(Boolean))].sort();
+      showFileLoaded(file.name, parsedRows.length);
+      renderPreview(parsedRows.slice(0, 5));
+      renderEmpConfig();
+      renderHoursWarnings();
+      checkReady();
+    } catch(err) { showStatus('error', 'Could not parse CSV: ' + err.message); }
+  };
+  reader.readAsText(file, 'UTF-8');
+}
+
+function parseCSV(text) {
+  text = text.replace(/^\uFEFF/, '');
+  const lines = text.split(/\r?\n/).filter(l => l.trim());
+  if (lines.length < 2) return [];
+  function parseLine(line) {
+    const res = []; let cur = '', inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i];
+      if (ch === '"') { if (inQ && line[i+1]==='"') { cur+='"'; i++; } else inQ=!inQ; }
+      else if (ch===',' && !inQ) { res.push(cur); cur=''; }
+      else cur+=ch;
+    }
+    res.push(cur); return res;
+  }
+  const headers = parseLine(lines[0]).map(h => h.trim());
+  return lines.slice(1).map(l => {
+    const vals = parseLine(l);
+    const row = {};
+    headers.forEach((h,i) => row[h] = (vals[i]||'').trim());
+    return row;
+  }).filter(r => Object.values(r).some(v=>v));
+}
+
+function showFileLoaded(name, count) {
+  uploadZone.style.display = 'none';
+  const el = document.getElementById('fileLoaded');
+  el.style.display = 'flex'; el.className = 'file-loaded';
+  el.innerHTML = `<span>✅</span><div><div class="filename">${name}</div><div class="rowcount">${count} rows loaded</div></div><button class="clear-btn" onclick="clearFile()">✕</button>`;
+}
+
+function clearFile() {
+  parsedRows = []; employees = [];
+  uploadZone.style.display = 'block';
+  document.getElementById('fileLoaded').style.display = 'none';
+  const pw = document.getElementById('previewWrap');
+  pw.innerHTML = ''; pw.style.display = 'none';
+  document.getElementById('hoursWarnings').style.display = 'none';
+  document.getElementById('hoursWarnings').innerHTML = '';
+  document.getElementById('csvFile').value = '';
+  document.getElementById('empConfigSection').style.display = 'none';
+  document.getElementById('billingPreview').style.display = 'none';
+  document.getElementById('billingPreview').innerHTML = '';
+  checkReady();
+}
+
+function renderPreview(rows) {
+  if (!rows.length) return;
+  const showKeys = ['Assigned To','Date','Hours per Day','Billing Code','Tasks','Milestones'].filter(k => Object.keys(rows[0]).includes(k));
+  const wrap = document.getElementById('previewWrap');
+  wrap.innerHTML = `<div class="preview-outer"><table class="preview-table">
+    <thead><tr>${showKeys.map(k=>`<th>${k}</th>`).join('')}</tr></thead>
+    <tbody>${rows.map(r=>`<tr>${showKeys.map(k=>`<td title="${(r[k]||'').replace(/"/g,'&quot;')}">${r[k]||''}</td>`).join('')}</tr>`).join('')}</tbody>
+  </table></div>`;
+  wrap.style.display = 'block';
+}
+
+// ── Employee config ───────────────────────────────────────────────────────────
+function renderEmpConfig() {
+  const grid = document.getElementById('empGrid');
+  grid.innerHTML = employees.map(emp => {
+    const id  = safeId(emp);
+    const def = empDefault(emp);
+    return `<div class="emp-card">
+      <div class="emp-name">${emp}</div>
+      <div class="emp-fields">
+        <div>
+          <label class="field-label" style="margin-bottom:4px;">Title</label>
+          <input type="text" id="title_${id}" value="${def ? def.title : ''}" placeholder="e.g. Software Engineer" oninput="renderBillingPreview()">
+        </div>
+        <div>
+          <label class="field-label" style="margin-bottom:4px;">Hourly Rate ($/hr)</label>
+          <input type="number" id="rate_${id}" value="${def ? def.rate : ''}" placeholder="e.g. 95.00" step="0.01" min="0" oninput="renderBillingPreview()">
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+  document.getElementById('empConfigSection').style.display = 'block';
+  // Defer billing preview until DOM is populated
+  setTimeout(renderBillingPreview, 0);
+}
+
+function safeId(name) { return name.replace(/\s+/g,'_').replace(/[^a-zA-Z0-9_]/g,''); }
+function getTitle(emp) { const el = document.getElementById('title_'+safeId(emp)); return el ? el.value.trim() : ''; }
+function getRate(emp)  { const el = document.getElementById('rate_'+safeId(emp));  const v = parseFloat(el && el.value); return isNaN(v) ? null : v; }
+
+// ── Hours coverage check ──────────────────────────────────────────────────────
+function renderHoursWarnings() {
+  // Build a map: employee -> isoKey -> total hours (all entries, billable or not, for coverage check)
+  const coverage = {};
+  for (const row of parsedRows) {
+    const emp = (row['Assigned To']||'').trim();
+    if (!emp) continue;
+    const rawDate = (row['Date']||'').trim();
+    if (!rawDate) continue;
+    const hpd = parseFloat(row['Hours per Day']) || 8;
+    const includeWeekends = (row['Include Weekends']||'').trim().toLowerCase() === 'yes';
+    // Expand dates without date-range filter — use full span present in data
+    const parts = rawDate.includes(ARROW) ? rawDate.split(ARROW)
+                : rawDate.includes('->') ? rawDate.split('->')
+                : [rawDate];
+    const dStart = parseDate(parts[0]);
+    const dEnd   = parts[1] ? parseDate(parts[1]) : dStart;
+    if (!dStart || !dEnd) continue;
+    if (!coverage[emp]) coverage[emp] = {};
+    const cur = new Date(dStart);
+    while (cur <= dEnd) {
+      const k = isoKey(cur);
+      coverage[emp][k] = (coverage[emp][k] || 0) + hpd;
+      cur.setDate(cur.getDate() + 1);
+    }
+  }
+
+  const warnings = [];
+  for (const emp of Object.keys(coverage).sort()) {
+    const dayMap = coverage[emp];
+    // Only check weekdays (Mon–Fri)
+    const shortDays = Object.keys(dayMap).filter(k => {
+      const d = new Date(k + 'T00:00:00');
+      const dow = d.getDay();
+      return dow !== 0 && dow !== 6 && dayMap[k] < 8;
+    });
+    if (!shortDays.length) continue;
+
+    const expected = Object.keys(dayMap).filter(k => {
+      const dow = new Date(k + 'T00:00:00').getDay();
+      return dow !== 0 && dow !== 6;
+    }).length * 8;
+    const actual = Object.keys(dayMap).filter(k => {
+      const dow = new Date(k + 'T00:00:00').getDay();
+      return dow !== 0 && dow !== 6;
+    }).reduce((s,k) => s + dayMap[k], 0);
+
+    // Group short days into week ranges (Mon–Fri week of)
+    const weekSet = {};
+    for (const k of shortDays) {
+      const d = new Date(k + 'T00:00:00');
+      // Get Monday of that week
+      const mon = new Date(d); mon.setDate(d.getDate() - (d.getDay() - 1));
+      const wk = isoKey(mon);
+      weekSet[wk] = true;
+    }
+    const weekLabels = Object.keys(weekSet).sort().map(wk => {
+      const mon = new Date(wk + 'T00:00:00');
+      const fri = new Date(mon); fri.setDate(mon.getDate() + 4);
+      return `week of ${fmtDate(mon)}`;
+    });
+    warnings.push({ emp, expected: expected.toFixed(1), actual: actual.toFixed(1), weeks: weekLabels });
+  }
+
+  const el = document.getElementById('hoursWarnings');
+  if (!warnings.length) { el.style.display = 'none'; el.innerHTML = ''; return; }
+
+  el.style.display = 'block';
+  el.innerHTML = `<div class="warn-box">
+    <div class="warn-box-title">⚠ Hours coverage warnings</div>
+    ${warnings.map(w => `<div class="warn-item">
+      Expected <strong>${w.expected} hrs</strong> for <strong>${w.emp}</strong>, only have <strong>${w.actual} hrs</strong>.
+      <div class="warn-weeks">Check: ${w.weeks.join(', ')}</div>
+    </div>`).join('')}
+  </div>`;
+}
+
+// ── Billing preview ───────────────────────────────────────────────────────────
+function renderBillingPreview() {
+  const s = document.getElementById('startDate').value;
+  const e = document.getElementById('endDate').value;
+  const el = document.getElementById('billingPreview');
+  if (!parsedRows.length || !s || !e || s > e) { el.style.display = 'none'; return; }
+
+  const startFilter = new Date(s + 'T00:00:00');
+  const endFilter   = new Date(e + 'T00:00:00');
+  const billableOnly = document.getElementById('billableOnly').checked;
+
+  // Sum billable hours per employee within range
+  const empHours = {};
+  for (const row of parsedRows) {
+    const emp = (row['Assigned To']||'').trim();
+    if (!emp) continue;
+    if (billableOnly && !(row['Billing Code']||'').trim()) continue;
+    const rawDate = (row['Date']||'').trim();
+    if (!rawDate) continue;
+    const hpd = parseFloat(row['Hours per Day']) || 8;
+    const includeWeekends = (row['Include Weekends']||'').trim().toLowerCase() === 'yes';
+    const days = expandDates(rawDate, startFilter, endFilter, includeWeekends);
+    if (!days.length) continue;
+    empHours[emp] = (empHours[emp] || 0) + hpd * days.length;
+  }
+
+  const empList = Object.keys(empHours).sort();
+  if (!empList.length) { el.style.display = 'none'; return; }
+
+  let grandTotal = 0;
+  let anyRate = false;
+
+  const rows = empList.map(emp => {
+    const hrs  = empHours[emp];
+    const rate = getRate(emp);
+    const amt  = rate !== null ? hrs * rate : null;
+    if (amt !== null) { grandTotal += amt; anyRate = true; }
+    return { emp, hrs, rate, amt };
+  });
+
+  const fmtCad = n => n.toLocaleString('en-CA', { style:'currency', currency:'CAD', minimumFractionDigits:2 });
+
+  el.innerHTML = `
+    <div class="billing-divider"></div>
+    <div class="billing-title">Billable Preview — ${fmtDate(startFilter)} to ${fmtDate(endFilter)}</div>
+    <div class="billing-rows">
+      ${rows.map(r => `<div class="billing-row">
+        <span>
+          <span class="emp-label">${r.emp}</span>
+          <span class="emp-hours">(${r.hrs.toFixed(1)} hrs${r.rate !== null ? ' × $'+r.rate+'/hr' : ''})</span>
+        </span>
+        <span class="emp-amount ${r.amt === null ? 'no-rate' : ''}">${r.amt !== null ? fmtCad(r.amt) : 'no rate set'}</span>
+      </div>`).join('')}
+    </div>
+    ${anyRate ? `<div class="billing-total-row">
+      <span class="total-label">Total Billable</span>
+      <span class="total-amount">${fmtCad(grandTotal)}</span>
+    </div>` : ''}
+  `;
+  el.style.display = 'block';
+}
+
+// ── Data parsing / expansion ──────────────────────────────────────────────────
+function cleanText(s) {
+  if (!s) return '';
+  return s.replace(/\(https?:\/\/[^)]+\)/g,'').replace(/@\S.*/,'').trim();
+}
+
+function parseBillingTags(code) {
+  if (!code) return { ised2:'', ised6:'' };
+  const parts = code.split(',').map(s=>s.trim());
+  return {
+    ised2: parts.find(p => /ISED\s*2\./i.test(p)) || '',
+    ised6: parts.find(p => /ISED\s*6\./i.test(p)) || ''
+  };
+}
+
+function parseDate(s) {
+  if (!s) return null;
+  s = s.replace(/\s+\d{1,2}:\d{2}\s+[AP]M.*$/i,'').trim();
+  // DD-Mon-YY e.g. "27-Mar-26"
+  const shortMatch = s.match(/^(\d{1,2})-([A-Za-z]{3})-(\d{2})$/);
+  if (shortMatch) {
+    const mn = {jan:0,feb:1,mar:2,apr:3,may:4,jun:5,jul:6,aug:7,sep:8,oct:9,nov:10,dec:11};
+    const m = mn[shortMatch[2].toLowerCase()];
+    if (m !== undefined) return new Date(2000+parseInt(shortMatch[3]), m, parseInt(shortMatch[1]));
+  }
+  // "Month D, YYYY" or "Month DD, YYYY" e.g. "March 9, 2026"
+  const longMatch = s.match(/^([A-Za-z]+)\s+(\d{1,2}),\s+(\d{4})$/);
+  if (longMatch) {
+    const mn = {january:0,february:1,march:2,april:3,may:4,june:5,july:6,august:7,september:8,october:9,november:10,december:11};
+    const m = mn[longMatch[1].toLowerCase()];
+    if (m !== undefined) return new Date(parseInt(longMatch[3]), m, parseInt(longMatch[2]));
+  }
+  // YYYY-MM-DD
+  const isoMatch = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (isoMatch) return new Date(parseInt(isoMatch[1]), parseInt(isoMatch[2])-1, parseInt(isoMatch[3]));
+  // Give up — never use new Date(string) as it's timezone-unsafe
+  return null;
+}
+
+function expandDates(dateStr, startFilter, endFilter, includeWeekends) {
+  if (!dateStr) return [];
+  const parts = dateStr.includes(ARROW) ? dateStr.split(ARROW)
+               : dateStr.includes('->') ? dateStr.split('->')
+               : [dateStr];
+  const dStart = parseDate(parts[0]);
+  const dEnd   = parts[1] ? parseDate(parts[1]) : dStart;
+  if (!dStart || !dEnd || dEnd < startFilter || dStart > endFilter) return [];
+  const cs = dStart < startFilter ? startFilter : dStart;
+  const ce = dEnd   > endFilter   ? endFilter   : dEnd;
+  const out = [];
+  const cur = new Date(cs);
+  while (cur <= ce) { out.push(new Date(cur)); cur.setDate(cur.getDate()+1); }
+  return out;
+}
+
+function isoKey(d) {
+  // Use local date components to avoid UTC shift (toISOString() returns UTC)
+  const y = d.getFullYear();
+  const m = String(d.getMonth()+1).padStart(2,'0');
+  const day = String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`;
+}
+
+function buildEmpMap(startFilter, endFilter) {
+  const billableOnly = document.getElementById('billableOnly').checked;
+  const empMap = {};
+  for (const row of parsedRows) {
+    const emp = (row['Assigned To']||'').trim();
+    if (!emp) continue;
+    const rawDate = (row['Date']||'').trim();
+    if (!rawDate) continue;
+    if (billableOnly && !(row['Billing Code']||'').trim()) continue;
+    const hpd = parseFloat(row['Hours per Day']) || 8;
+    const includeWeekends = (row['Include Weekends']||'').trim().toLowerCase() === 'yes';
+    const { ised2, ised6 } = parseBillingTags(row['Billing Code']||'');
+    const task      = cleanText(row['Tasks']||'');
+    const milestone = cleanText(row['Milestones']||'');
+    const workDesc  = task || milestone;
+
+    const dayList = expandDates(rawDate, startFilter, endFilter, includeWeekends);
+    if (!dayList.length) continue;
+
+    if (!empMap[emp]) empMap[emp] = {};
+
+    for (const date of dayList) {
+      const key = isoKey(date);
+
+      if (!empMap[emp][key]) {
+        empMap[emp][key] = [];
+      }
+
+      empMap[emp][key].push({
+        date,
+        hours: hpd,
+        workDescs: workDesc ? [workDesc] : [],
+        ised2,
+        ised6
+      });
+    }
+  }
+  return empMap;
+}
+
+// Group consecutive days that share the same workDescs + billing tags
+function groupByDesc(dayDict) {
+  const sorted = Object.keys(dayDict)
+  .sort()
+  .flatMap(k => dayDict[k]);
+  if (!sorted.length) return [];
+  const groups = [];
+  let cur = { startDate: sorted[0].date, endDate: sorted[0].date, hours: sorted[0].hours,
+              workDescs: [...sorted[0].workDescs], ised2: sorted[0].ised2, ised6: sorted[0].ised6,
+              key: sorted[0].workDescs.join('|') + '||' + sorted[0].ised2 + '||' + sorted[0].ised6 };
+  for (let i = 1; i < sorted.length; i++) {
+    const e    = sorted[i];
+    const eKey = e.workDescs.join('|') + '||' + e.ised2 + '||' + e.ised6;
+    const prev = new Date(cur.endDate); prev.setDate(prev.getDate()+1);
+    if (eKey === cur.key && isoKey(prev) === isoKey(e.date)) {
+      cur.endDate = e.date; cur.hours += e.hours;
+    } else {
+      groups.push(cur);
+      cur = { startDate: e.date, endDate: e.date, hours: e.hours,
+              workDescs: [...e.workDescs], ised2: e.ised2, ised6: e.ised6, key: eKey };
+    }
+  }
+  groups.push(cur);
+  return groups;
+}
+
+// ── Formatting helpers ────────────────────────────────────────────────────────
+const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+function fmtDate(d) { return `${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`; }
+function dayName(d) { return ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][d.getDay()]; }
+
+// ── Excel sheet builder ───────────────────────────────────────────────────────
+function buildSheet(empName, entries, isGrouped) {
+  const ws = {}, merges = [];
+  const AMBER  = { patternType:'solid', fgColor:{ rgb:'FFC000' } };
+  const WHITE  = { patternType:'solid', fgColor:{ rgb:'FFFFFF' } };
+  const GREEN  = { patternType:'solid', fgColor:{ rgb:'92D050' } };
+  const FH     = { name:'Calibri', sz:10, bold:true, color:{ rgb:'FFFFFF' } };
+  const FL     = { name:'Calibri', sz:10, bold:true };
+  const FD     = { name:'Calibri', sz:10 };
+  const FT     = { name:'Calibri', sz:11, bold:true };
+  const MED    = { style:'medium', color:{ rgb:'000000' } };
+  const THIN   = { style:'thin',   color:{ rgb:'000000' } };
+  const ctr    = { horizontal:'center', vertical:'center', wrapText:true };
+  const lft    = { horizontal:'left',   vertical:'center', wrapText:true };
+  const mb     = () => ({ top:THIN, bottom:THIN, left:MED, right:MED });
+  const ob     = () => ({ top:MED,  bottom:MED,  left:MED, right:MED });
+
+  function S(r,c,v,s,extra) {
+    const a = XLSX.utils.encode_cell({r,c});
+    ws[a] = { v:v??'', t:typeof v==='number'?'n':'s', s };
+    if (extra) Object.assign(ws[a], extra);
+  }
+  function F(r,c,f,z,s) {
+    const a = XLSX.utils.encode_cell({r,c});
+    ws[a] = { v:0, t:'n', f, z, s };
+  }
+
+  // Rows 1-3: company header (r=1..3, cols 0-8)
+  merges.push({ s:{r:1,c:0}, e:{r:3,c:8} });
+  S(1,0, COMPANY, { font:FT, fill:WHITE, alignment:ctr, border:ob() });
+
+  // Rows 6-7 (r=5..6): column headers
+  const hdrs = [
+    { c:0, v:"Employee's Name / Nom de l'employé(es)" },
+    { c:1, v:'Title/Titre' },
+    { c:2, v:'Article in the Basis of Payment/ Article dans la base de paiement' },
+    { c:3, v:'Period of Work/ Période de travail' },
+    { c:5, v:"Description of Work\nSOW's article/ Description du travail\nL'article de EDT" },
+    { c:6, v:'Hours/ Heures' },
+    { c:7, v:'Rates / Taux' },
+    { c:8, v:'Total / Totale' },
+  ];
+  for (const { c, v } of hdrs) {
+    merges.push({ s:{r:5,c}, e:{r:6,c} });
+    S(5,c, v, { font:FH, fill:AMBER, alignment:ctr, border:ob() });
+  }
+  // E col: blank top, "Day of the week" bottom
+  S(5,4, '', { fill:AMBER, border:{ top:MED, left:MED, right:MED } });
+  S(6,4, 'Day of the week/ Jour de la semaine', { font:FH, fill:AMBER, alignment:ctr, border:{ bottom:MED, left:MED, right:MED } });
+
+  // Data rows start at r=7
+  const DR = 7;
+  const empTitle = getTitle(empName);
+  const empRate  = getRate(empName);
+
+  for (let i = 0; i < entries.length; i++) {
+    const r = DR + i;
+    const e = entries[i];
+
+    // Period and day columns
+    let periodStr, dayStr;
+    if (isGrouped) {
+      const sameDay = isoKey(e.startDate) === isoKey(e.endDate);
+      periodStr = sameDay ? fmtDate(e.startDate) : `${fmtDate(e.startDate)} → ${fmtDate(e.endDate)}`;
+      dayStr    = sameDay ? dayName(e.startDate) : `${dayName(e.startDate)} – ${dayName(e.endDate)}`;
+    } else {
+      periodStr = fmtDate(e.date);
+      dayStr    = dayName(e.date);
+    }
+
+    // Description = Task/Milestone first, then ISED 6.x tag on new line
+    const workText = e.workDescs.join('; ');
+    const descText = [workText, e.ised6].filter(Boolean).join('\n');
+
+    S(r,0, i===0 ? empName : '',  { font:FD, fill:WHITE, alignment:lft, border:mb() });
+    S(r,1, empTitle,               { font:FD, fill:WHITE, alignment:ctr, border:mb() });
+    S(r,2, e.ised2 || '',          { font:FD, fill:WHITE, alignment:ctr, border:mb() });
+    S(r,3, periodStr,              { font:FD, fill:WHITE, alignment:ctr, border:mb() });
+    S(r,4, dayStr,                 { font:FD, fill:WHITE, alignment:ctr, border:mb() });
+    S(r,5, descText,               { font:FD, fill:WHITE, alignment:lft, border:mb() });
+    S(r,6, e.hours,                { font:FD, fill:WHITE, alignment:ctr, border:mb() }, { z:'0.0' });
+    if (empRate !== null) {
+      S(r,7, empRate, { font:FD, fill:WHITE, alignment:ctr, border:mb() }, { z:'$#,##0.00' });
+    } else {
+      S(r,7, '',      { font:FD, fill:WHITE, border:mb() });
+    }
+    F(r,8, `G${r+1}*H${r+1}`, '$#,##0.00', { font:FD, fill:WHITE, alignment:ctr, border:mb() });
+  }
+
+  // Total row
+  const TR = DR + entries.length;
+  merges.push({ s:{r:TR,c:0}, e:{r:TR,c:5} });
+  S(TR,0, 'Total ', { font:FL, fill:WHITE, alignment:{ horizontal:'left', vertical:'center' }, border:ob() });
+  F(TR,6, `SUM(G${DR+1}:G${TR})`, '0.0',      { font:FL, fill:GREEN, alignment:ctr, border:ob() });
+  S(TR,7, '',                     { fill:WHITE, border:ob() });
+  F(TR,8, `SUM(I${DR+1}:I${TR})`, '$#,##0.00', { font:FL, fill:GREEN, alignment:ctr, border:ob() });
+
+  // Footer notes
+  const NR = TR + 2;
+  merges.push({ s:{r:NR,c:0}, e:{r:NR,c:2} });
+  S(NR,   0, 'One timesheet per employee',      { font:FL });
+  S(NR+1, 0, 'Une feuille de temps par employé',{ font:FL });
+
+  // Signatures
+  const SR = NR + 5;
+  S(SR,   0, "Employee's Signature",    { font:FL });
+  merges.push({ s:{r:SR,  c:3}, e:{r:SR,  c:4} });
+  S(SR,   3, "Manager's Signature",     { font:FL });
+  S(SR+1, 0, "Signature de l'employé(e)", { font:FL });
+  merges.push({ s:{r:SR+1,c:3}, e:{r:SR+1,c:4} });
+  S(SR+1, 3, 'Signature du gérant',     { font:FL });
+
+  ws['!ref']    = XLSX.utils.encode_range({ r:0,c:0 }, { r:SR+2,c:8 });
+  ws['!merges'] = merges;
+  ws['!cols']   = [{wch:39},{wch:16},{wch:22},{wch:28},{wch:14},{wch:35},{wch:13},{wch:13},{wch:18}];
+  ws['!rows']   = [
+    {hpt:15.75},
+    {hpt:15},{hpt:15},{hpt:15.75},
+    {hpt:7.5},
+    {hpt:15.75},{hpt:86.25},
+    ...Array(entries.length).fill({hpt:30}),
+    {hpt:15.75}
+  ];
+  return ws;
+}
+
+// ── Generate ──────────────────────────────────────────────────────────────────
+function generateTimesheets() {
+  const startFilter = new Date(document.getElementById('startDate').value + 'T00:00:00');
+  const endFilter   = new Date(document.getElementById('endDate').value   + 'T00:00:00');
+  const isGrouped   = document.querySelector('input[name="grouping"]:checked').value === 'grouped';
+
+  const empMap  = buildEmpMap(startFilter, endFilter);
+  const empNames = Object.keys(empMap);
+  if (!empNames.length) {
+    showStatus('error', 'No entries found for the selected date range. Try widening the date range or check your CSV.'); return;
+  }
+
+  const wb = XLSX.utils.book_new();
+  for (const emp of empNames.sort()) {
+    const entries = isGrouped
+      ? groupByDesc(empMap[emp])
+      : Object.keys(empMap[emp])
+      .sort()
+      .flatMap(k => empMap[emp][k]);
+    const ws = buildSheet(emp, entries, isGrouped);
+    XLSX.utils.book_append_sheet(wb, ws, emp.replace(/[\\/*?[\]:]/g,'').slice(0,31));
+  }
+
+  const sd = document.getElementById('startDate').value;
+  const ed = document.getElementById('endDate').value;
+  XLSX.writeFile(wb, `IR_Timesheets_${sd}_to_${ed}.xlsx`);
+  showStatus('success', `✅ Generated <strong>${empNames.length} timesheet(s)</strong> — <strong>IR_Timesheets_${sd}_to_${ed}.xlsx</strong>`, empNames.sort());
+}
+
+function showStatus(type, html, emps) {
+  const el = document.getElementById('statusMsg');
+  el.className = 'status ' + type; el.innerHTML = html;
+  if (emps && emps.length) {
+    const div = document.createElement('div'); div.className = 'emp-badges';
+    emps.forEach(e => { const b = document.createElement('span'); b.className='emp-badge'; b.textContent=e; div.appendChild(b); });
+    el.appendChild(div);
+  }
+}
+</script>
+</body>
+</html>
