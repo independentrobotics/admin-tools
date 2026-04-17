@@ -286,21 +286,36 @@ function handleFile(file) {
 
 function parseCSV(text) {
   text = text.replace(/^\uFEFF/, '');
-  const lines = text.split(/\r?\n/).filter(l => l.trim());
-  if (lines.length < 2) return [];
-  function parseLine(line) {
-    const res = []; let cur = '', inQ = false;
-    for (let i = 0; i < line.length; i++) {
-      const ch = line[i];
-      if (ch === '"') { if (inQ && line[i+1]==='"') { cur+='"'; i++; } else inQ=!inQ; }
-      else if (ch===',' && !inQ) { res.push(cur); cur=''; }
-      else cur+=ch;
+  // Parse records respecting quoted fields that may contain embedded newlines
+  function parseRecords(src) {
+    const records = [];
+    let fields = [], cur = '', inQ = false, i = 0;
+    while (i < src.length) {
+      const ch = src[i];
+      if (ch === '"') {
+        if (inQ && src[i+1] === '"') { cur += '"'; i += 2; continue; }
+        inQ = !inQ; i++; continue;
+      }
+      if (!inQ) {
+        if (ch === ',') { fields.push(cur); cur = ''; i++; continue; }
+        if (ch === '\r' || ch === '\n') {
+          if (ch === '\r' && src[i+1] === '\n') i++;
+          fields.push(cur); cur = '';
+          if (fields.some(f => f.trim())) records.push(fields);
+          fields = []; i++; continue;
+        }
+      }
+      cur += ch; i++;
     }
-    res.push(cur); return res;
+    // flush last record
+    fields.push(cur);
+    if (fields.some(f => f.trim())) records.push(fields);
+    return records;
   }
-  const headers = parseLine(lines[0]).map(h => h.trim());
-  return lines.slice(1).map(l => {
-    const vals = parseLine(l);
+  const records = parseRecords(text);
+  if (records.length < 2) return [];
+  const headers = records[0].map(h => h.trim());
+  return records.slice(1).map(vals => {
     const row = {};
     headers.forEach((h,i) => row[h] = (vals[i]||'').trim());
     return row;
@@ -625,6 +640,7 @@ function groupByDesc(dayDict) {
     const e    = sorted[i];
     const eKey = e.workDescs.join('|') + '||' + e.ised2 + '||' + e.ised6;
     const prev = new Date(cur.endDate); prev.setDate(prev.getDate()+1);
+    while (prev.getDay() === 0 || prev.getDay() === 6) prev.setDate(prev.getDate()+1);
     if (eKey === cur.key && isoKey(prev) === isoKey(e.date)) {
       cur.endDate = e.date; cur.hours += e.hours;
     } else {
